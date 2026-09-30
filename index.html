@@ -120,6 +120,27 @@ body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', syste
 .progress-bar { height: 4px; background: var(--border); border-radius: 2px; margin-top: 4px; }
 .progress-fill { height: 100%; border-radius: 2px; transition: width 0.3s; }
 
+/* Stock Planning Summary */
+.stock-summary { background: var(--card); border: 1px solid var(--border); border-radius: 12px; margin-bottom: 20px; overflow: hidden; }
+.stock-summary-header { padding: 16px 20px; cursor: pointer; display: flex; align-items: center; justify-content: space-between; }
+.stock-summary-header:hover { background: rgba(99,102,241,0.05); }
+.stock-summary-header h2 { font-size: 16px; font-weight: 600; }
+.stock-summary-body { display: none; border-top: 1px solid var(--border); }
+.stock-summary-body.open { display: block; }
+.stock-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.stock-table th { background: var(--bg); color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: 0.3px; padding: 10px 12px; text-align: right; position: sticky; top: 0; }
+.stock-table th:first-child, .stock-table th:nth-child(2) { text-align: left; }
+.stock-table td { padding: 8px 12px; text-align: right; border-bottom: 1px solid var(--border); }
+.stock-table td:first-child, .stock-table td:nth-child(2) { text-align: left; }
+.stock-table tr.l2-row { background: rgba(99,102,241,0.06); font-weight: 600; }
+.stock-table tr.l2-row td { font-size: 13px; border-bottom: 2px solid var(--border); }
+.stock-table tr.l3-row td:first-child { padding-left: 28px; color: var(--muted); font-size: 11px; }
+.stock-table tr.total-row { background: rgba(34,197,94,0.08); font-weight: 700; }
+.stock-table tr.total-row td { font-size: 13px; border-top: 2px solid var(--green); }
+.stock-highlight { color: var(--green); font-weight: 600; }
+.stock-warn { color: var(--orange); font-weight: 600; }
+.stock-danger { color: var(--red); font-weight: 600; }
+
 /* L2 color indicators */
 .l2-color { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
 </style>
@@ -155,6 +176,19 @@ body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', syste
     <div class="chart-card">
       <h3>Current vs Target GMV by L2</h3>
       <div class="chart-wrap"><canvas id="l2BarChart"></canvas></div>
+    </div>
+  </div>
+
+  <!-- Stock Planning Summary -->
+  <div class="stock-summary">
+    <div class="stock-summary-header" onclick="toggleStockSummary(this)">
+      <h2>&#128230; Stock Planning Summary — Units Needed to Reach Target</h2>
+      <span class="arrow" style="font-size:18px;color:var(--muted)">&#9660;</span>
+    </div>
+    <div class="stock-summary-body open" id="stockSummaryBody">
+      <div style="overflow-x:auto;max-height:600px;overflow-y:auto">
+        <table class="stock-table" id="stockTable"></table>
+      </div>
     </div>
   </div>
 
@@ -198,6 +232,7 @@ function recalcAll() {
 
   renderKPIs(target, baseline, growth);
   renderCharts(target);
+  renderStockSummary(target);
   renderL2Sections(target);
   renderOther();
 }
@@ -208,8 +243,9 @@ function renderKPIs(target, baseline, growth) {
   var totalL3s = 0;
   D.l2Categories.forEach(function(l2) { totalL3s += l2.l3s.length; });
 
-  // Calculate total projected units
+  // Calculate total projected units and current items
   var totalProjUnits = 0;
+  var totalCurrentItems = 0;
   D.l2Categories.forEach(function(l2) {
     var l2Target = target * l2.proportion;
     l2.l3s.forEach(function(l3) {
@@ -220,14 +256,20 @@ function renderKPIs(target, baseline, growth) {
         var projRev = l3Target * skuWeight;
         var projUnits = p.asp > 0 ? Math.ceil(projRev / p.asp) : 0;
         totalProjUnits += projUnits;
+        totalCurrentItems += p.items;
       });
     });
   });
+
+  var incrementalUnits = totalProjUnits - totalCurrentItems;
 
   var html =
     kpiCard('Target Revenue', '$' + fmt(target), 'green') +
     kpiCard('Current Baseline', '$' + fmt(baseline), 'blue') +
     kpiCard('Growth Needed', (growth > 0 ? '+' : '') + growth.toFixed(1) + '%', growth > 30 ? 'orange' : 'purple') +
+    kpiCard('Current Items Sold', fmt(totalCurrentItems), '') +
+    kpiCard('Projected Units', fmt(totalProjUnits), 'green') +
+    kpiCard('Incremental to Stock', (incrementalUnits > 0 ? '+' : '') + fmt(incrementalUnits), incrementalUnits > 0 ? 'orange' : 'green') +
     kpiCard('L2 Categories', totalL2s, '') +
     kpiCard('L3 Subcategories', totalL3s, '') +
     kpiCard('Total Products', totalProducts, '');
@@ -291,6 +333,109 @@ function renderCharts(target) {
       }
     }
   });
+}
+
+function renderStockSummary(target) {
+  var table = document.getElementById('stockTable');
+  var html = '<thead><tr>';
+  html += '<th style="text-align:left">Category (L2)</th>';
+  html += '<th style="text-align:left">Subcategory (L3)</th>';
+  html += '<th>Current Items Sold</th>';
+  html += '<th>Projected Units Needed</th>';
+  html += '<th>Incremental to Stock</th>';
+  html += '<th>Growth %</th>';
+  html += '</tr></thead><tbody>';
+
+  var grandCurrentItems = 0;
+  var grandProjUnits = 0;
+
+  D.l2Categories.forEach(function(l2) {
+    var l2Target = target * l2.proportion;
+    var l2CurrentItems = 0;
+    var l2ProjUnits = 0;
+
+    // First pass: calculate L2 totals
+    l2.l3s.forEach(function(l3) {
+      var l3Target = l2Target * l3.proportion;
+      var l3TotalGmv = l3.gmv;
+      l3.products.forEach(function(p) {
+        l2CurrentItems += p.items;
+        var skuWeight = l3TotalGmv > 0 ? p.gmv / l3TotalGmv : 0;
+        var projRev = l3Target * skuWeight;
+        var projUnits = p.asp > 0 ? Math.ceil(projRev / p.asp) : 0;
+        l2ProjUnits += projUnits;
+      });
+    });
+
+    grandCurrentItems += l2CurrentItems;
+    grandProjUnits += l2ProjUnits;
+
+    var l2Incr = l2ProjUnits - l2CurrentItems;
+    var l2Growth = l2CurrentItems > 0 ? ((l2ProjUnits - l2CurrentItems) / l2CurrentItems * 100) : 0;
+    var l2GrowthCls = l2Growth > 50 ? 'stock-danger' : l2Growth > 20 ? 'stock-warn' : 'stock-highlight';
+
+    // L2 summary row
+    html += '<tr class="l2-row">';
+    html += '<td style="text-align:left">' + l2.name + '</td>';
+    html += '<td style="text-align:left;color:var(--muted)">' + l2.l3s.length + ' subcategories</td>';
+    html += '<td>' + l2CurrentItems.toLocaleString() + '</td>';
+    html += '<td class="stock-highlight">' + l2ProjUnits.toLocaleString() + '</td>';
+    html += '<td class="' + (l2Incr > 0 ? 'stock-warn' : 'stock-highlight') + '">' + (l2Incr > 0 ? '+' : '') + l2Incr.toLocaleString() + '</td>';
+    html += '<td class="' + l2GrowthCls + '">' + (l2Growth > 0 ? '+' : '') + l2Growth.toFixed(1) + '%</td>';
+    html += '</tr>';
+
+    // L3 detail rows
+    l2.l3s.forEach(function(l3) {
+      var l3Target = l2Target * l3.proportion;
+      var l3TotalGmv = l3.gmv;
+      var l3CurrentItems = 0;
+      var l3ProjUnits = 0;
+
+      l3.products.forEach(function(p) {
+        l3CurrentItems += p.items;
+        var skuWeight = l3TotalGmv > 0 ? p.gmv / l3TotalGmv : 0;
+        var projRev = l3Target * skuWeight;
+        var projUnits = p.asp > 0 ? Math.ceil(projRev / p.asp) : 0;
+        l3ProjUnits += projUnits;
+      });
+
+      var l3Incr = l3ProjUnits - l3CurrentItems;
+      var l3Growth = l3CurrentItems > 0 ? ((l3ProjUnits - l3CurrentItems) / l3CurrentItems * 100) : 0;
+      var l3GrowthCls = l3Growth > 50 ? 'stock-danger' : l3Growth > 20 ? 'stock-warn' : 'stock-highlight';
+
+      html += '<tr class="l3-row">';
+      html += '<td style="text-align:left"></td>';
+      html += '<td style="text-align:left">' + l3.name + '</td>';
+      html += '<td>' + l3CurrentItems.toLocaleString() + '</td>';
+      html += '<td>' + l3ProjUnits.toLocaleString() + '</td>';
+      html += '<td class="' + (l3Incr > 0 ? 'stock-warn' : 'stock-highlight') + '">' + (l3Incr > 0 ? '+' : '') + l3Incr.toLocaleString() + '</td>';
+      html += '<td class="' + l3GrowthCls + '">' + (l3Growth > 0 ? '+' : '') + l3Growth.toFixed(1) + '%</td>';
+      html += '</tr>';
+    });
+  });
+
+  // Grand total row
+  var grandIncr = grandProjUnits - grandCurrentItems;
+  var grandGrowth = grandCurrentItems > 0 ? ((grandProjUnits - grandCurrentItems) / grandCurrentItems * 100) : 0;
+  html += '<tr class="total-row">';
+  html += '<td style="text-align:left">TOTAL</td>';
+  html += '<td style="text-align:left">All categories</td>';
+  html += '<td>' + grandCurrentItems.toLocaleString() + '</td>';
+  html += '<td>' + grandProjUnits.toLocaleString() + '</td>';
+  html += '<td>' + (grandIncr > 0 ? '+' : '') + grandIncr.toLocaleString() + '</td>';
+  html += '<td>' + (grandGrowth > 0 ? '+' : '') + grandGrowth.toFixed(1) + '%</td>';
+  html += '</tr>';
+
+  html += '</tbody>';
+  table.innerHTML = html;
+}
+
+function toggleStockSummary(el) {
+  var body = document.getElementById('stockSummaryBody');
+  body.classList.toggle('open');
+  var arrow = el.querySelector('.arrow');
+  if (body.classList.contains('open')) arrow.style.transform = 'rotate(180deg)';
+  else arrow.style.transform = '';
 }
 
 function renderL2Sections(target) {
