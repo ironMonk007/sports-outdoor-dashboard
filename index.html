@@ -16,6 +16,38 @@
 body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; padding: 20px; }
 .container { max-width: 1400px; margin: 0 auto; }
 
+/* Tab Navigation */
+.tab-nav { display: flex; gap: 0; margin-bottom: 20px; background: var(--card); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+.tab-btn { flex: 1; padding: 14px 20px; text-align: center; font-size: 14px; font-weight: 600; cursor: pointer; border: none; background: transparent; color: var(--muted); transition: all 0.2s; border-bottom: 3px solid transparent; }
+.tab-btn:hover { color: var(--text); background: rgba(99,102,241,0.05); }
+.tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); background: rgba(99,102,241,0.08); }
+.tab-content { display: none; }
+.tab-content.active { display: block; }
+
+/* Stock Projection Tab */
+.stock-proj-controls { display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; align-items: center; }
+.stock-proj-search { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; color: var(--text); font-size: 13px; width: 300px; }
+.stock-proj-search:focus { outline: none; border-color: var(--accent); }
+.stock-proj-filter { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; color: var(--text); font-size: 13px; min-width: 180px; }
+.stock-proj-filter:focus { outline: none; border-color: var(--accent); }
+.stock-proj-list { background: var(--card); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+.stock-proj-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.stock-proj-table th { background: var(--bg); color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: 0.3px; padding: 10px 12px; text-align: right; position: sticky; top: 0; z-index: 2; cursor: pointer; }
+.stock-proj-table th:first-child, .stock-proj-table th:nth-child(2) { text-align: left; }
+.stock-proj-table td { padding: 8px 12px; text-align: right; border-bottom: 1px solid var(--border); }
+.stock-proj-table td:first-child { text-align: left; }
+.stock-proj-table td:nth-child(2) { text-align: left; }
+.stock-proj-table tr:hover { background: rgba(99,102,241,0.04); }
+.stock-proj-table .prod-name { max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
+.stock-proj-table .cat-name { color: var(--muted); font-size: 10px; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stock-proj-table .units-needed { font-weight: 700; color: var(--green); font-size: 13px; }
+.stock-proj-table .units-current { color: var(--text); }
+.stock-proj-table .units-incr { font-weight: 600; }
+.stock-proj-summary-bar { padding: 14px 20px; background: var(--bg); border-bottom: 1px solid var(--border); display: flex; gap: 24px; flex-wrap: wrap; font-size: 13px; }
+.stock-proj-summary-bar .sp-item { display: flex; gap: 6px; }
+.stock-proj-summary-bar .sp-label { color: var(--muted); }
+.stock-proj-summary-bar .sp-val { font-weight: 700; }
+
 /* Header */
 .header { text-align: center; margin-bottom: 24px; }
 .header h1 { font-size: 24px; font-weight: 600; margin-bottom: 4px; }
@@ -164,6 +196,15 @@ body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', syste
     </div>
   </div>
 
+  <!-- Tab Navigation -->
+  <div class="tab-nav">
+    <div class="tab-btn active" onclick="switchTab('dashboard', this)">&#128202; Dashboard Overview</div>
+    <div class="tab-btn" onclick="switchTab('stockproj', this)">&#128230; Stock Projection — What to Sell</div>
+  </div>
+
+  <!-- TAB 1: Dashboard Overview -->
+  <div class="tab-content active" id="tab-dashboard">
+
   <!-- KPI Cards -->
   <div class="kpi-row" id="kpiRow"></div>
 
@@ -197,6 +238,32 @@ body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', syste
 
   <!-- Other/Uncategorized Products -->
   <div id="otherSection" style="display:none"></div>
+
+  </div><!-- end tab-dashboard -->
+
+  <!-- TAB 2: Stock Projection -->
+  <div class="tab-content" id="tab-stockproj">
+    <div class="stock-proj-controls">
+      <input type="text" class="stock-proj-search" id="stockSearch" placeholder="Search product name..." oninput="renderStockProjection()">
+      <select class="stock-proj-filter" id="stockL2Filter" onchange="renderStockProjection()">
+        <option value="">All L2 Categories</option>
+      </select>
+      <select class="stock-proj-filter" id="stockSortBy" onchange="renderStockProjection()">
+        <option value="unitsNeeded">Sort: Units Needed (High→Low)</option>
+        <option value="unitsIncr">Sort: Incremental Stock (High→Low)</option>
+        <option value="name">Sort: Product Name (A→Z)</option>
+        <option value="currentItems">Sort: Current Stock (High→Low)</option>
+        <option value="growth">Sort: Growth % Needed (High→Low)</option>
+      </select>
+      <button class="btn btn-outline" onclick="exportStockCSV()">Export Stock List CSV</button>
+    </div>
+    <div class="stock-proj-list">
+      <div class="stock-proj-summary-bar" id="stockProjSummary"></div>
+      <div style="overflow-x:auto;max-height:700px;overflow-y:auto">
+        <table class="stock-proj-table" id="stockProjTable"></table>
+      </div>
+    </div>
+  </div><!-- end tab-stockproj -->
 </div>
 
 <script>
@@ -213,6 +280,7 @@ function init() {
   var defaultTarget = Math.ceil(D.l1Gmv * 1.2 / 100) * 100;
   document.getElementById('targetInput').value = defaultTarget;
 
+  populateL2Filter();
   recalcAll();
 
   document.getElementById('targetInput').addEventListener('input', debounce(recalcAll, 300));
@@ -233,6 +301,7 @@ function recalcAll() {
   renderKPIs(target, baseline, growth);
   renderCharts(target);
   renderStockSummary(target);
+  renderStockProjection();
   renderL2Sections(target);
   renderOther();
 }
@@ -436,6 +505,142 @@ function toggleStockSummary(el) {
   var arrow = el.querySelector('.arrow');
   if (body.classList.contains('open')) arrow.style.transform = 'rotate(180deg)';
   else arrow.style.transform = '';
+}
+
+function switchTab(tabId, btn) {
+  document.querySelectorAll('.tab-content').forEach(function(t) { t.classList.remove('active'); });
+  document.querySelectorAll('.tab-btn').forEach(function(b) { b.classList.remove('active'); });
+  document.getElementById('tab-' + tabId).classList.add('active');
+  btn.classList.add('active');
+}
+
+function populateL2Filter() {
+  var sel = document.getElementById('stockL2Filter');
+  D.l2Categories.forEach(function(l2) {
+    var opt = document.createElement('option');
+    opt.value = l2.name;
+    opt.textContent = l2.name;
+    sel.appendChild(opt);
+  });
+}
+
+function renderStockProjection() {
+  var target = parseFloat(document.getElementById('targetInput').value) || 0;
+  var search = (document.getElementById('stockSearch').value || '').toLowerCase();
+  var l2Filter = document.getElementById('stockL2Filter').value;
+  var sortBy = document.getElementById('stockSortBy').value;
+
+  // Build flat product list with projections
+  var items = [];
+  var totalCurrentItems = 0;
+  var totalProjUnits = 0;
+
+  D.l2Categories.forEach(function(l2) {
+    if (l2Filter && l2.name !== l2Filter) return;
+    var l2Target = target * l2.proportion;
+    l2.l3s.forEach(function(l3) {
+      var l3Target = l2Target * l3.proportion;
+      var l3TotalGmv = l3.gmv;
+      l3.products.forEach(function(p) {
+        var skuWeight = l3TotalGmv > 0 ? p.gmv / l3TotalGmv : 0;
+        var projRev = l3Target * skuWeight;
+        var projUnits = p.asp > 0 ? Math.ceil(projRev / p.asp) : 0;
+        var incr = projUnits - p.items;
+        var growth = p.items > 0 ? ((projUnits - p.items) / p.items * 100) : (projUnits > 0 ? 999 : 0);
+
+        totalCurrentItems += p.items;
+        totalProjUnits += projUnits;
+
+        // Search filter
+        if (search && p.name.toLowerCase().indexOf(search) === -1) return;
+
+        items.push({
+          name: p.name, brand: p.brand, l2: l2.name, l3: l3.name,
+          currentItems: p.items, projUnits: projUnits, incremental: incr,
+          growth: growth, asp: p.asp, gmv: p.gmv, orders: p.orders, sku: p.sku
+        });
+      });
+    });
+  });
+
+  // Sort
+  if (sortBy === 'unitsNeeded') items.sort(function(a,b) { return b.projUnits - a.projUnits; });
+  else if (sortBy === 'unitsIncr') items.sort(function(a,b) { return b.incremental - a.incremental; });
+  else if (sortBy === 'name') items.sort(function(a,b) { return a.name.localeCompare(b.name); });
+  else if (sortBy === 'currentItems') items.sort(function(a,b) { return b.currentItems - a.currentItems; });
+  else if (sortBy === 'growth') items.sort(function(a,b) { return b.growth - a.growth; });
+
+  // Summary bar
+  var totalIncr = totalProjUnits - totalCurrentItems;
+  var summaryHtml =
+    '<div class="sp-item"><span class="sp-label">Products:</span><span class="sp-val">' + items.length + '</span></div>' +
+    '<div class="sp-item"><span class="sp-label">Current Stock (Items Sold):</span><span class="sp-val">' + totalCurrentItems.toLocaleString() + '</span></div>' +
+    '<div class="sp-item"><span class="sp-label">Units to Sell for Target:</span><span class="sp-val" style="color:var(--green)">' + totalProjUnits.toLocaleString() + '</span></div>' +
+    '<div class="sp-item"><span class="sp-label">Additional Stock Needed:</span><span class="sp-val" style="color:' + (totalIncr > 0 ? 'var(--orange)' : 'var(--green)') + '">' + (totalIncr > 0 ? '+' : '') + totalIncr.toLocaleString() + '</span></div>';
+  document.getElementById('stockProjSummary').innerHTML = summaryHtml;
+
+  // Table
+  var html = '<thead><tr>';
+  html += '<th style="text-align:left">#</th>';
+  html += '<th style="text-align:left">Product Name</th>';
+  html += '<th style="text-align:left">L2 Category</th>';
+  html += '<th style="text-align:left">L3 Subcategory</th>';
+  html += '<th>Brand</th>';
+  html += '<th>Current Stock<br>(Items Sold)</th>';
+  html += '<th>Units to Sell<br>(Projected)</th>';
+  html += '<th>Additional Stock<br>Needed</th>';
+  html += '<th>Growth %</th>';
+  html += '<th>ASP ($)</th>';
+  html += '</tr></thead><tbody>';
+
+  items.forEach(function(it, i) {
+    var incrCls = it.incremental > 0 ? 'stock-warn' : 'stock-highlight';
+    var growthCls = it.growth > 50 ? 'stock-danger' : it.growth > 20 ? 'stock-warn' : 'stock-highlight';
+
+    html += '<tr>';
+    html += '<td style="text-align:left;color:var(--muted)">' + (i+1) + '</td>';
+    html += '<td class="prod-name" title="' + escHtml(it.name) + '">' + escHtml(it.name) + '</td>';
+    html += '<td class="cat-name" title="' + escHtml(it.l2) + '">' + escHtml(it.l2) + '</td>';
+    html += '<td class="cat-name" title="' + escHtml(it.l3) + '">' + escHtml(it.l3) + '</td>';
+    html += '<td style="color:var(--muted)">' + escHtml(it.brand) + '</td>';
+    html += '<td class="units-current">' + it.currentItems.toLocaleString() + '</td>';
+    html += '<td class="units-needed">' + it.projUnits.toLocaleString() + '</td>';
+    html += '<td class="units-incr ' + incrCls + '">' + (it.incremental > 0 ? '+' : '') + it.incremental.toLocaleString() + '</td>';
+    html += '<td class="' + growthCls + '">' + (it.growth > 0 && it.growth < 999 ? '+' : '') + (it.growth >= 999 ? 'NEW' : it.growth.toFixed(1) + '%') + '</td>';
+    html += '<td>$' + it.asp.toFixed(2) + '</td>';
+    html += '</tr>';
+  });
+
+  html += '</tbody>';
+  document.getElementById('stockProjTable').innerHTML = html;
+}
+
+function exportStockCSV() {
+  var target = parseFloat(document.getElementById('targetInput').value) || 0;
+  var csv = 'Product Name,L2 Category,L3 Subcategory,Brand,Daraz SKU,Current Stock (Items Sold),Units to Sell (Projected),Additional Stock Needed,Growth (%),ASP ($)\n';
+
+  D.l2Categories.forEach(function(l2) {
+    var l2Target = target * l2.proportion;
+    l2.l3s.forEach(function(l3) {
+      var l3Target = l2Target * l3.proportion;
+      var l3TotalGmv = l3.gmv;
+      l3.products.forEach(function(p) {
+        var skuWeight = l3TotalGmv > 0 ? p.gmv / l3TotalGmv : 0;
+        var projRev = l3Target * skuWeight;
+        var projUnits = p.asp > 0 ? Math.ceil(projRev / p.asp) : 0;
+        var incr = projUnits - p.items;
+        var growth = p.items > 0 ? ((projUnits - p.items) / p.items * 100) : 0;
+
+        csv += '"' + (p.name||'').replace(/"/g,'""') + '","' + l2.name + '","' + l3.name + '","' + (p.brand||'') + '","' + p.sku + '",' + p.items + ',' + projUnits + ',' + incr + ',' + growth.toFixed(1) + ',' + p.asp.toFixed(2) + '\n';
+      });
+    });
+  });
+
+  var blob = new Blob([csv], {type: 'text/csv'});
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'stock-projection-' + new Date().toISOString().slice(0,10) + '.csv';
+  a.click();
 }
 
 function renderL2Sections(target) {
